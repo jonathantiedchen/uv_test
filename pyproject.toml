@@ -3,9 +3,8 @@ name = "uv_test"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
-    "codecarbon>=2.8.3",
     "datasets>=3.3.2",
     "ipykernel>=6.29.5",
     "matplotlib>=3.10.0",
