@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # init.sh
 
-# Exit immediately if a command exits with a non-zero status
-set -e
-
 # Function to display info messages
 function echo_info {
     echo -e "\033[1;34m[INFO]\033[0m $1"
@@ -22,8 +19,8 @@ install_linux_packages() {
     echo_info "Updating package lists..."
     sudo apt-get update
 
-    echo_info "Installing Python3, venv, and pip..."
-    sudo apt-get install -y python3 python3-venv python3-pip git
+    echo_info "Installing Git and curl..."
+    sudo apt-get install -y git curl
 }
 
 # Function to install packages on macOS
@@ -31,18 +28,17 @@ install_macos_packages() {
     echo_info "Updating Homebrew..."
     brew update
 
-    echo_info "Installing Python3..."
-    brew install python3
-
-    echo_info "Installing Git..."
-    brew install git
+    echo_info "Installing Git and curl..."
+    brew install git curl
 }
 
 # Install necessary packages based on OS
 if [[ "$OS" == "Linux" ]]; then
     install_linux_packages
+    RUNNING_ON_CLOUD=true
 elif [[ "$OS" == "Darwin" ]]; then
     install_macos_packages
+    RUNNING_ON_CLOUD=false
 else
     echo_error "Unsupported Operating System: $OS"
     exit 1
@@ -53,12 +49,21 @@ if command -v nvidia-smi > /dev/null 2>&1; then
     echo_info "NVIDIA GPU found:"
     nvidia-smi
 else
-    echo_error "No GPU detected or driver missing."
+    echo_info "No GPU detected or driver missing."
+fi
+
+# Install uv if not already installed
+if ! command -v uv > /dev/null 2>&1; then
+    echo_info "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.local/bin:$PATH"
+else
+    echo_info "uv is already installed."
 fi
 
 # Clone the repository if not already cloned
-REPO_DIR="math-reasoning-in-language-models"  # Replace with your actual repo name
-REPO_URL="https://github.com/jonathantiedchen/math-reasoning-in-language-models.git"  # Replace with your repo URL
+REPO_DIR="uv_test"
+REPO_URL="https://github.com/jonathantiedchen/${REPO_DIR}.git"
 
 if [ ! -d "$REPO_DIR" ]; then
     echo_info "Cloning repository from GitHub..."
@@ -66,32 +71,36 @@ if [ ! -d "$REPO_DIR" ]; then
 else
     echo_info "Repository already cloned. Pulling latest changes..."
     cd "$REPO_DIR"
-    git reset --hard HEAD
-    git pull
+    if [[ "$RUNNING_ON_CLOUD" == "true" ]]; then
+        echo_info "Running on UCloud. Resetting head..."
+        git reset --hard HEAD
+        git pull
+    fi
 fi
 
-# Set up virtual environment
-if [ ! -d "venv" ]; then
-    echo_info "Setting up virtual environment..."
-    python3 -m venv .venv
+# Quick fix: Use the copy mode to hide this warning:
+# warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance. 
+# If the cache and target directories are on different filesystems, hardlinking may not be supported.
+export UV_LINK_MODE=copy
+
+# Activate uv environment
+echo_info "Activating uv environment and installing dependencies..."
+uv venv .venv
+uv sync
+
+# Install tensorflow dependent on environment
+if [[ "$RUNNING_ON_CLOUD" == "true" ]]; then
+    if command -v nvidia-smi > /dev/null 2>&1; then
+        echo_info "Installing tf for Linux UCloud environment with cuda support..."
+        uv add "tensorflow[and-cuda]"
+    else
+        echo_info "Installing tensorflow for CPU-only support..."
+        uv add tensorflow
+    fi
 else
-    echo_info "Virtual environment already exists."
+    echo_info "Installing tf for local MacOS environment..."
+    uv add tensorflow-macos
 fi
-
-# Change to repository directory
-# cd "$REPO_DIR"
-
-# Activate virtual environment
-echo_info "Activating virtual environment..."
-source .venv/bin/activate
-
-# Upgrade pip
-echo_info "Upgrading pip..."
-pip install --upgrade pip
-
-# Install requirements
-echo_info "Installing dependencies..."
-pip install -r requirements.txt
 
 # Ensuring reproducibility
 echo_info "Setting environment variable for reproducibility..."
